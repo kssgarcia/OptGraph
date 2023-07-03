@@ -1,0 +1,87 @@
+// Geometrical parameters
+rad1 = 40;
+rad2 = 30;
+rad3 = 20;
+width = 40;
+length = 300;
+open = 30;
+open_len = 50;
+ang = Pi/12;
+
+// Mesh parameters
+size = 2;
+
+// Points without rotation
+P3_x = -Sqrt(rad1^2 - open^2/4);
+P3_y = -open/2;
+P4_x = Sqrt(rad1^2 - width^2/4);
+P4_y = -width/2;
+P5_x = Sqrt(rad1^2 - width^2/4);
+P5_y = width/2;
+P6_x = -Sqrt(rad1^2 - open^2/4);
+P6_y = open/2;
+P7_x = P6_x + open_len;
+P7_y = P6_y;
+P8_x = P3_x + open_len;
+P8_y = P3_y;
+P9_x = length - Sqrt(rad2^2 - width^2/4);
+P9_y = -width/2;
+P10_x = length - Sqrt(rad2^2 - width^2/4);
+P10_y = width/2;
+P11_x = length + rad2;
+P11_y = 0;
+
+// Points
+Point(1) = {0, 0, 0, size};
+Point(2) = {length, 0, 0, size};
+Point(3) = {P3_x, P3_y, 0, size};
+Point(4) = {P4_x, P4_y, 0, size};
+Point(5) = {P5_x, P5_y, 0, size};
+Point(6) = {P6_x, P6_y, 0, size};
+Point(7) = {P7_x, P7_y, 0, size};
+Point(8) = {P8_x, P8_y, 0, size};
+Point(9) = {P9_x, P9_y, 0, size};
+Point(10) = {P10_x, P10_y, 0, size};
+Point(11) = {P11_x, P11_y, 0, size};
+
+// Rotate all points
+Rotate {{0, 0, 1}, {0, 0, 0}, ang} {
+  Point{2};
+  Point{3};
+  Point{4};
+  Point{5};
+  Point{6};
+  Point{7};
+  Point{8};
+  Point{9}; 
+  Point{10};
+  Point{11};
+}
+
+// Extra points for vertical loading
+Point(12) = {length*Cos(ang) - rad3, length*Sin(ang), 0, size};
+Point(13) = {length*Cos(ang) + rad3, length*Sin(ang), 0, size};
+
+// Lines
+Circle(1) = {3, 1, 4};
+Circle(2) = {5, 1, 6};
+Circle(3) = {9, 2, 11};
+Circle(4) = {11, 2, 10};
+Circle(5) = {12, 2, 13};
+Circle(6) = {13, 2, 12};
+Line(7) = {3, 8};
+Line(8) = {8, 7};
+Line(9) = {7, 6};
+Line(10) = {4, 9};
+Line(11) = {5, 10};
+
+// Surface
+Line Loop(1) = {-11, 2, -9, -8, -7, 1, 10, 3, 4};
+Line Loop(2) = {6, 5};
+Plane Surface(1) = {1, 2};
+
+// Physical groups
+Physical Line(1) = {9, 7};
+Physical Line(2) = {5};
+Physical Surface(3) = {1};
+
