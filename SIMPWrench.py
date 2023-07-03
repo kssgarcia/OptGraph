@@ -7,7 +7,6 @@ from matplotlib import animation
 
 import solidspy.assemutil as ass # Solidspy 1.1.0
 import solidspy.postprocesor as pos 
-import solidspy.preprocesor as msh
 import meshio
 
 from beams import *

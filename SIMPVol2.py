@@ -110,18 +110,18 @@ pos.fields_plot(els, nodes, UC, E_nodes=E_nodes, S_nodes=S_nodes)
 
 # %% Animation
 fig, ax = plt.subplots()
-im = ax.imshow(np.zeros((ny,nx)), cmap='gray', interpolation='none',norm=colors.Normalize(vmin=-1,vmax=0))
+im = ax.imshow(np.zeros((ny,nx)), origin='lower', cmap='gray', interpolation='none',norm=colors.Normalize(vmin=-1,vmax=0))
 
 def update(frame):
     rho_frame = rho_data[frame]
     im.set_array(rho_frame)
     return im,
 ani = animation.FuncAnimation(fig, update, frames=len(rho_data), interval=200, blit=True)
-output_file = "SIMPVol2.gif"
+output_file = "anims/SIMPVol2.gif"
 ani.save(output_file, writer="pillow")
 
 # %% Plot
 plt.ion() 
 fig,ax = plt.subplots()
-im = ax.imshow(-rho.reshape(ny, nx), cmap='gray', interpolation='none',norm=colors.Normalize(vmin=-1,vmax=0))
+im = ax.imshow(-rho.reshape(ny, nx), origin='lower', cmap='gray', interpolation='none',norm=colors.Normalize(vmin=-1,vmax=0))
 fig.show()
