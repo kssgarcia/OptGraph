@@ -6,100 +6,6 @@ import solidspy.uelutil as uel
 from scipy.sparse import coo_matrix
 
 
-def sparse_assem(elements, mats, nodes, neq, assem_op, uel=None):
-    """
-    Assembles the global stiffness matrix
-    using a sparse storing scheme
-
-    The scheme used to assemble is COOrdinate list (COO), and
-    it converted to Compressed Sparse Row (CSR) afterward
-    for the solution phase [1]_.
-
-    Parameters
-    ----------
-    elements : ndarray (int)
-      Array with the number for the nodes in each element.
-    mats    : ndarray (float)
-      Array with the material profiles.
-    nodes    : ndarray (float)
-      Array with the nodal numbers and coordinates.
-    assem_op : ndarray (int)
-      Assembly operator.
-    neq : int
-      Number of active equations in the system.
-    uel : callable function (optional)
-      Python function that returns the local stiffness matrix.
-
-    Returns
-    -------
-    kglob : sparse matrix (float)
-      Array with the global stiffness matrix in a sparse
-      Compressed Sparse Row (CSR) format.
-
-    References
-    ----------
-    .. [1] Sparse matrix. (2017, March 8). In Wikipedia,
-        The Free Encyclopedia.
-        https://en.wikipedia.org/wiki/Sparse_matrix
-
-    """
-
-    rows = []
-    cols = []
-    stiff_vals = []
-    nels = elements.shape[0]
-    kloc, _ = ass.retriever(elements, mats, nodes, -1, uel=uel)
-    for ele in range(nels):
-        kloc_ = kloc * mats[elements[ele, 0], 2]
-        ndof = kloc_.shape[0]
-        dme = assem_op[ele, :ndof]
-        for row in range(ndof):
-            glob_row = dme[row]
-            if glob_row != -1:
-                for col in range(ndof):
-                    glob_col = dme[col]
-                    if glob_col != -1:
-                        rows.append(glob_row)
-                        cols.append(glob_col)
-                        stiff_vals.append(kloc_[row, col])
-
-    stiff = coo_matrix((stiff_vals, (rows, cols)), shape=(neq, neq)).tocsr()
-    return stiff
-
-def is_equilibrium(nodes, mats, els, loads):
-    """
-    Check if the system is in equilibrium
-    
-    Get from: https://github.com/AppliedMechanics-EAFIT/SolidsPy/blob/master/solidspy/solids_GUI.py
-    
-    Parameters
-    ----------
-    nodes : ndarray
-        Array with models nodes
-    mats : ndarray
-        Array with models materials
-    els : ndarray
-        Array with models elements
-    loads : ndarray
-        Array with models loads
-        
-    Returns
-    -------
-    equil : bool
-        Variable True when the system is in equilibrium and False when it doesn't
-    """   
-
-    equil = True
-    assem_op, bc_array, neq = ass.DME(nodes[:, -2:], els, ndof_el_max=8)
-    stiff_mat = sparse_assem(els, mats, nodes, neq, assem_op)
-
-    rhs_vec = ass.loadasem(loads, bc_array, neq)
-    disp = sol.static_sol(stiff_mat, rhs_vec)
-    if not np.allclose(stiff_mat.dot(disp)/stiff_mat.max(), rhs_vec/stiff_mat.max()):
-        equil = False
-
-    return equil
-    
 def preprocessing(nodes, mats, els, loads):
     """
     Compute IBC matrix and the static solve.
@@ -125,12 +31,13 @@ def preprocessing(nodes, mats, els, loads):
         Static displacement solve
     rh_vec : ndarray 
         Vector of loads
-    """  
+    """   
 
     assem_op, bc_array, neq = ass.DME(nodes[:, -2:], els, ndof_el_max=8)
+    print("Number of elements: {}".format(els.shape[0]))
 
     # System assembly
-    stiff_mat = sparse_assem(els, mats, nodes[:, :3], neq, assem_op)
+    stiff_mat, _ = ass.assembler(els, mats, nodes[:, :3], neq, assem_op)
     rhs_vec = ass.loadasem(loads, bc_array, neq)
 
     # System solution
@@ -141,7 +48,7 @@ def preprocessing(nodes, mats, els, loads):
     return bc_array, disp, rhs_vec
 
 
-def postprocessing(nodes, mats, els, bc_array, disp, strain_sol=True):
+def postprocessing(nodes, mats, els, bc_array, disp):
     """
     Compute the nodes displacements, strains and stresses.
     
@@ -172,11 +79,9 @@ def postprocessing(nodes, mats, els, bc_array, disp, strain_sol=True):
     
     disp_complete = pos.complete_disp(bc_array, nodes, disp)
     strain_nodes, stress_nodes = None, None
-    if strain_sol == True:  
-        strain_nodes, stress_nodes = pos.strain_nodes(nodes, els, mats, disp_complete)
+    strain_nodes, stress_nodes = pos.strain_nodes(nodes, els, mats, disp_complete)
     
     return disp_complete, strain_nodes, stress_nodes
-
 
 def optimality_criteria(nels, rho, d_c, d_v, g):
     """

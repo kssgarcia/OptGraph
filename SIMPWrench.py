@@ -10,31 +10,41 @@ import solidspy.postprocesor as pos
 import meshio
 
 from beams import *
-from utils.SIMP_utils_wrench import *
+# from utils.SIMP_utils_wrench import *
+from SIMP_utils_copy import *
 
+np.seterr(divide='ignore', invalid='ignore')
 
 mesh = meshio.read("wrench.msh")
 points = mesh.points
 cells = mesh.cells
+# %%
 
 nodes = np.zeros((points.shape[0], 5))
 nodes[:,0] = np.arange(0,points.shape[0])
 nodes[:,1:3] = points[:,:2]
-nodes[cells[0].data[:,0], -2:] = -1
+nodes[np.unique(cells[1].data.flatten()), -2:] = -1
+nodes[np.unique(cells[2].data.flatten()), -2:] = -1
 
-loads = np.zeros((1,3))
-loads[0,0] = cells[1].data[:, 0][6]
-loads[0,-1] = -10000
+n_loads = cells[0].data.shape[0] + 1
+loads = np.zeros((n_loads,3))
+loads[:,0] = np.unique(cells[0].data.flatten())
+loads[:,-1] = 1/n_loads
 
 els = np.zeros((cells[-1].data.shape[0], 7), dtype=int)
 els[:,0] = np.arange(0,cells[-1].data.shape[0], dtype=int)
 els[:, 1:3] = [1,0]
 els[:,-4:] = cells[-1].data
+
 mats = np.zeros((els.shape[0], 3))
-mats[:] = [2.068e11,0.28,1]
+mats[:] = [1,0.28,1]
 
 BC = np.argwhere(nodes[:,-1]==-1)
-np.seterr(divide='ignore', invalid='ignore')
+
+IBC, UG, _ = preprocessing(nodes, mats, els, loads) # Calculate boundary conditions and global stiffness matrix
+UC, E_nodes, S_nodes = postprocessing(nodes, mats[:,:2], els, IBC, UG) # Calculate displacements, strains and stresses
+
+# %%
 
 # Calculate centers and volumes
 nels = els.shape[0]
@@ -60,28 +70,6 @@ d_c = np.ones(nels)
 d_v = areas.copy()
 rho_data = []
 
-E = mats[0, 0]
-nu = mats[0, 1]
-k = np.array([1/2-nu/6, 1/8+nu/8, -1/4-nu/12, -1/8+3*nu /
-             8, -1/4+nu/12, -1/8-nu/8, nu/6, 1/8-3*nu/8])
-kloc = E/(1-nu**2)*np.array([[k[0], k[1], k[2], k[3], k[4], k[5], k[6], k[7]],
-                             [k[1], k[0], k[7], k[6], k[5],
-                              k[4], k[3], k[2]],
-                             [k[2], k[7], k[0], k[5], k[6],
-                              k[3], k[4], k[1]],
-                             [k[3], k[6], k[5], k[0], k[7],
-                              k[2], k[1], k[4]],
-                             [k[4], k[5], k[6], k[7], k[0],
-                              k[1], k[2], k[3]],
-                             [k[5], k[4], k[3], k[2], k[1],
-                              k[0], k[7], k[6]],
-                             [k[6], k[3], k[4], k[1], k[2],
-                              k[7], k[0], k[5]],
-                             [k[7], k[2], k[1], k[4], k[3], k[6], k[5], k[0]]])
-assem_op, bc_array, neq = ass.DME(
-    nodes[:, -2:], els, ndof_el_max=8)
-
-
 for i in range(niter):
 
     if change < 0.01:
@@ -90,13 +78,8 @@ for i in range(niter):
     # Change density 
     mats[:,2] = Emin+rho**penal*(Emax-Emin)
 
-    # System assembly
-    stiff_mat = sparse_assem(els, mats, nodes[:, :3], neq, assem_op, kloc)
-    rhs_vec = ass.loadasem(loads, bc_array, neq)
-
-    # System solution
-    disp = spsolve(stiff_mat, rhs_vec)
-    UC = pos.complete_disp(bc_array, nodes, disp)
+    IBC, UG, _ = preprocessing(nodes, mats, els, loads) # Calculate boundary conditions and global stiffness matrix
+    UC, E_nodes, S_nodes = postprocessing(nodes, mats[:,:2], els, IBC, UG) # Calculate displacements, strains and stresses
 
     # Sensitivity analysis
     sensi_rho[:] = (np.dot(UC[els[:,-4:]].reshape(nels,8),kloc) * UC[els[:,-4:]].reshape(nels,8) ).sum(1)
@@ -107,6 +90,12 @@ for i in range(niter):
     rho_old[:] = rho
     rho[:], g = optimality_criteria(nels, rho, d_c, g)
 
+    mask = rho > 0.5
+    mask_els = protect_els(els[np.invert(mask)], els.shape[0], loads, BC)
+    mask = np.bitwise_or(mask, mask_els)
+    del_node(nodes, els[mask], loads, BC)
+    els = els[mask]
+
     # Compute the change
     change = np.linalg.norm(rho.reshape(nels,1)-rho_old.reshape(nels,1),np.inf)
 
@@ -115,32 +104,6 @@ for i in range(niter):
 
     break
 
-# %%
-# Remove/add elements
-mask = rho > 0.5
-mask_els = protect_els(els[np.invert(mask)], els.shape[0], loads, BC)
-mask = np.bitwise_or(mask, mask_els)
-del_node(nodes, els[mask], loads, BC)
-els = els[mask]
-
 # %% 
 E_nodes, S_nodes = pos.strain_nodes(nodes, els, mats[:,:2], UC)
 pos.fields_plot(els, nodes, UC, E_nodes=E_nodes, S_nodes=S_nodes)
-
-# %% Animation
-fig, ax = plt.subplots()
-im = ax.imshow(np.zeros((ny,nx)), cmap='gray', interpolation='none',norm=colors.Normalize(vmin=-1,vmax=0))
-
-def update(frame):
-    rho_frame = rho_data[frame]
-    im.set_array(rho_frame)
-    return im,
-ani = animation.FuncAnimation(fig, update, frames=len(rho_data), interval=200, blit=True)
-output_file = "animation.gif"
-ani.save(output_file, writer="pillow")
-
-# %% Plot
-plt.ion() 
-fig,ax = plt.subplots()
-im = ax.imshow(-rho.reshape(ny, nx), cmap='gray', interpolation='none',norm=colors.Normalize(vmin=-1,vmax=0))
-fig.show()
